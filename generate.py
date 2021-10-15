@@ -4,9 +4,10 @@ import torch
 from torchvision import utils
 from model import Generator
 from tqdm import tqdm
+from utils import sample2img
 
 
-def generate(args, g_ema, device, mean_latent):
+def generate(args, g_ema, device, mean_latent, n_rows=6):
 
     with torch.no_grad():
         g_ema.eval()
@@ -16,6 +17,10 @@ def generate(args, g_ema, device, mean_latent):
             sample, _ = g_ema(
                 [sample_z], truncation=args.truncation, truncation_latent=mean_latent
             )
+            sample = sample2img(sample,
+                                load_resolution=args.load_size,
+                                train_resolution=args.train_size,
+                                n_rows=n_rows)
 
             utils.save_image(
                 sample,
@@ -29,10 +34,14 @@ def generate(args, g_ema, device, mean_latent):
 if __name__ == "__main__":
     device = "cuda"
 
-    parser = argparse.ArgumentParser(description="Generate samples from the generator")
+    parser = argparse.ArgumentParser(
+        description="Generate samples from the generator")
 
     parser.add_argument(
-        "--size", type=int, default=1024, help="output image size of the generator"
+        "--load_size", type=int, default=384, help="output image size of the generator"
+    )
+    parser.add_argument(
+        "--train_size", type=int, default=64, help="output image size of the generator"
     )
     parser.add_argument(
         "--sample",
@@ -43,7 +52,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--pics", type=int, default=20, help="number of images to be generated"
     )
-    parser.add_argument("--truncation", type=float, default=1, help="truncation ratio")
+    parser.add_argument("--truncation", type=float,
+                        default=1, help="truncation ratio")
     parser.add_argument(
         "--truncation_mean",
         type=int,
@@ -62,6 +72,11 @@ if __name__ == "__main__":
         default=2,
         help="channel multiplier of the generator. config-f = 2, else = 1",
     )
+    parser.add_argument(
+        "--num_letters",
+        type=int,
+        default=33,
+        help="num letters to generate")
 
     args = parser.parse_args()
 
@@ -81,4 +96,7 @@ if __name__ == "__main__":
     else:
         mean_latent = None
 
-    generate(args, g_ema, device, mean_latent)
+    n_rows = 0  # this parameter only need for sample2img
+    while n_rows**2 < args.num_letters:
+        n_rows += 1
+    generate(args, g_ema, device, mean_latent, n_rows=n_rows)

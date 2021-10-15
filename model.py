@@ -367,14 +367,14 @@ class StyledConv(nn.Module):
 
 
 class ToRGB(nn.Module):
-    def __init__(self, in_channel, style_dim, upsample=True, blur_kernel=[1, 3, 3, 1]):
+    def __init__(self, in_channel, style_dim, upsample=True, blur_kernel=[1, 3, 3, 1], num_letters=33):
         super().__init__()
 
         if upsample:
             self.upsample = Upsample(blur_kernel)
 
-        self.conv = ModulatedConv2d(in_channel, 3, 1, style_dim, demodulate=False)
-        self.bias = nn.Parameter(torch.zeros(1, 3, 1, 1))
+        self.conv = ModulatedConv2d(in_channel, num_letters, 1, style_dim, demodulate=False)
+        self.bias = nn.Parameter(torch.zeros(1, num_letters, 1, 1))
 
     def forward(self, input, style, skip=None):
         out = self.conv(input, style)
@@ -397,6 +397,7 @@ class Generator(nn.Module):
         channel_multiplier=2,
         blur_kernel=[1, 3, 3, 1],
         lr_mlp=0.01,
+        num_letters=33
     ):
         super().__init__()
 
@@ -431,7 +432,7 @@ class Generator(nn.Module):
         self.conv1 = StyledConv(
             self.channels[4], self.channels[4], 3, style_dim, blur_kernel=blur_kernel
         )
-        self.to_rgb1 = ToRGB(self.channels[4], style_dim, upsample=False)
+        self.to_rgb1 = ToRGB(self.channels[4], style_dim, upsample=False, num_letters=num_letters)
 
         self.log_size = int(math.log(size, 2))
         self.num_layers = (self.log_size - 2) * 2 + 1
@@ -637,7 +638,7 @@ class ResBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, size, channel_multiplier=2, blur_kernel=[1, 3, 3, 1]):
+    def __init__(self, size, channel_multiplier=2, blur_kernel=[1, 3, 3, 1], num_letters=33):
         super().__init__()
 
         channels = {
@@ -652,7 +653,7 @@ class Discriminator(nn.Module):
             1024: 16 * channel_multiplier,
         }
 
-        convs = [ConvLayer(3, channels[size], 1)]
+        convs = [ConvLayer(num_letters, channels[size], 1)]
 
         log_size = int(math.log(size, 2))
 
@@ -696,3 +697,44 @@ class Discriminator(nn.Module):
 
         return out
 
+
+
+class StyleProjector(nn.Module):
+    def __init__(self, input_nc, ngf, pad_size, use_bias, n_downsampling=3):
+        super().__init__()
+
+        down_sampling = [
+            nn.Conv2d(input_nc, ngf, kernel_size=7, padding=pad_size, bias=use_bias),
+            nn.InstanceNorm2d(ngf),
+            nn.ReLU(True)
+        ]
+
+        for i in range(n_downsampling):
+            mult = 2**i
+            down_sampling += [
+                    nn.Conv2d(ngf * mult,
+                              ngf * mult * 2,
+                              kernel_size=3,
+                              stride=2,
+                              padding=1,
+                              bias=use_bias),
+                    nn.InstanceNorm2d(ngf * mult * 2),
+                    nn.ReLU(True)
+                ]
+        self.down_sampling = nn.Sequential(*down_sampling)
+        self.global_pool =  nn.AvgPool2d(kernel_size=9)
+    
+    def forward(self, input):
+        x = input
+        x = self.down_sampling(x)
+        x = self.global_pool(x)
+        x = torch.squeeze(x)
+        return x
+
+if __name__ == "__main__":
+    from torchsummary import summary
+
+    net = StyleProjector(input_nc=3, ngf=64, pad_size=3, use_bias=True, n_downsampling=3)
+    net = net.to("cuda")
+    summary(net, (3, 128, 128))
+    

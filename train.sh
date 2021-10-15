@@ -1,0 +1,1 @@
+python train.py /home/roman/stylegan2-pytorch/fonts3k_rus --batch 2 --wandb
